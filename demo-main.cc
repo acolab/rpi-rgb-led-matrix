@@ -855,15 +855,6 @@ static int usage(const char *progname) {
   return 1;
 }
 
-const char *demo_parameter = NULL;
-ImageScroller *scroller;
-
-#include <csignal>
-void signal_handler( int signum )
-{
-    scroller->LoadPPM(demo_parameter);
-}
-
 int main(int argc, char *argv[]) {
   bool as_daemon = false;
   int runtime_seconds = -1;
@@ -874,6 +865,8 @@ int main(int argc, char *argv[]) {
   int pwm_bits = -1;
   bool large_display = false;
   bool do_luminance_correct = true;
+
+  const char *demo_parameter = NULL;
 
   int opt;
   while ((opt = getopt(argc, argv, "dlD:t:r:p:c:m:L")) != -1) {
@@ -990,13 +983,12 @@ int main(int argc, char *argv[]) {
   case 1:
   case 2:
     if (demo_parameter) {
-      scroller = new ImageScroller(canvas,
+      ImageScroller *scroller = new ImageScroller(canvas,
                                                   demo == 1 ? 1 : -1,
                                                   scroll_ms);
       if (!scroller->LoadPPM(demo_parameter))
         return 1;
       image_gen = scroller;
-      signal(SIGUSR1, signal_handler);
     } else {
       fprintf(stderr, "Demo %d Requires PPM image as parameter\n", demo);
       return 1;
