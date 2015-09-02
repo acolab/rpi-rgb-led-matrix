@@ -15,6 +15,9 @@
 #include <string.h>
 #include <unistd.h>
 
+#include <sys/types.h>
+#include <sys/stat.h>
+
 #include <algorithm>
 
 using std::min;
@@ -255,7 +258,7 @@ public:
     fclose(f);
     fprintf(stderr, "Read image '%s' with %dx%d\n", filename,
             new_width, new_height);
-    horizontal_position_ = 0;
+    //horizontal_position_ = 0;
     MutexLock l(&mutex_new_image_);
     new_image_.Delete();  // in case we reload faster than is picked up
     new_image_.image = new_image;
@@ -270,7 +273,7 @@ public:
     while (running()) {
       {
         MutexLock l(&mutex_new_image_);
-        if (new_image_.IsValid()) {
+        if (!current_image_.IsValid() || (new_image_.IsValid() && horizontal_position_ == -screen_width)) {
           current_image_.Delete();
           current_image_ = new_image_;
           new_image_.Reset();
@@ -282,13 +285,21 @@ public:
       }
       for (int x = 0; x < screen_width; ++x) {
         for (int y = 0; y < screen_height; ++y) {
-          const Pixel &p = current_image_.getPixel(
-                     (horizontal_position_ + x) % current_image_.width, y);
-          canvas()->SetPixel(x, y, p.red, p.green, p.blue);
+            {
+                if (horizontal_position_ + x >= 0 && horizontal_position_ + x < current_image_.width)
+                {
+                    const Pixel &p = current_image_.getPixel(
+                            (horizontal_position_ + x) % current_image_.width, y);
+                    canvas()->SetPixel(x, y, p.red, p.green, p.blue);
+                }
+                else
+                    canvas()->SetPixel(x, y, 0,0,0);
+            }
         }
       }
       horizontal_position_ += scroll_jumps_;
-      if (horizontal_position_ < 0) horizontal_position_ = current_image_.width;
+      //if (horizontal_position_ < 0) horizontal_position_ = current_image_.width;
+      if (horizontal_position_ > current_image_.width) horizontal_position_ = -screen_width;
       if (scroll_ms_ <= 0) {
         // No scrolling. We don't need the image anymore.
         current_image_.Delete();
@@ -971,6 +982,7 @@ int main(int argc, char *argv[]) {
     // Mapping the coordinates of a 32x128 display mapped to a square of 64x64
     canvas = new LargeSquare64x64Canvas(canvas);
   }
+  ImageScroller *scroller;
 
   // The ThreadedCanvasManipulator objects are filling
   // the matrix continuously.
@@ -983,7 +995,7 @@ int main(int argc, char *argv[]) {
   case 1:
   case 2:
     if (demo_parameter) {
-      ImageScroller *scroller = new ImageScroller(canvas,
+      scroller = new ImageScroller(canvas,
                                                   demo == 1 ? 1 : -1,
                                                   scroll_ms);
       if (!scroller->LoadPPM(demo_parameter))
@@ -1029,6 +1041,24 @@ int main(int argc, char *argv[]) {
 
   // Image generating demo is crated. Now start the thread.
   image_gen->Start();
+
+  struct stat attrib;
+  stat(demo_parameter, &attrib);
+  time_t last_mtime = attrib.st_mtime;
+    
+  while (1)
+  {
+      stat(demo_parameter, &attrib);
+      time_t current_mtime = attrib.st_mtime;
+
+      if (current_mtime != last_mtime)
+      {
+          if (!scroller->LoadPPM(demo_parameter))
+              printf("Failed to reload image");
+          last_mtime = current_mtime;
+      }
+      usleep(100 * 1000);
+  }
 
   // Now, the image genreation runs in the background. We can do arbitrary
   // things here in parallel. In this demo, we're essentially just
